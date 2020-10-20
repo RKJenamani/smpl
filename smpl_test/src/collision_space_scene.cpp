@@ -392,6 +392,8 @@ bool CollisionSpaceScene::ProcessAttachedCollisionObject(
         {
             return false;
         }
+        else
+            ROS_INFO("\n\nAdded an external object!\n\n");
 
         // TODO: handle touch links
         return true;

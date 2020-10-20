@@ -190,6 +190,7 @@ auto GetCollisionObjects(
             printf("Parsed string has length < 1.\n");
         }
         object_ids.push_back(sTemp);
+        ROS_INFO("Object ID %s",sTemp);
 
         objects[i].resize(6);
         for (int j=0; j < 6; ++j)
@@ -275,6 +276,32 @@ bool ReadInitialConfiguration(
             ROS_WARN("initial_configuration/multi_dof_joint_state is not an array.");
         }
     }
+
+    // {
+    //     moveit_msgs::AttachedCollisionObject attached_object;
+    //     attached_object.link_name = "r_wrist_roll_link";
+    //     attached_object.object.header.frame_id = "odom_combined";
+    //     /* The id of the object */
+    //     attached_object.object.id = "box";
+
+    //     /* A default pose */
+    //     geometry_msgs::Pose pose;
+    //     pose.orientation.w = 1.0;
+
+    //     /* Define a box to be attached */
+    //     shape_msgs::SolidPrimitive primitive;
+    //     primitive.type = primitive.BOX;
+    //     primitive.dimensions.resize(3);
+    //     primitive.dimensions[0] = 0.1;
+    //     primitive.dimensions[1] = 0.1;
+    //     primitive.dimensions[2] = 0.1;
+
+    //     attached_object.object.primitives.push_back(primitive);
+    //     attached_object.object.primitive_poses.push_back(pose);
+    //     attached_object.object.operation = attached_object.object.ADD;
+
+    //     state.attached_collision_objects.push_back(attached_object);
+    // }
 
     ROS_INFO("Read initial state containing %zu joints and %zu multi-dof joints", state.joint_state.name.size(), state.multi_dof_joint_state.joint_names.size());
     return true;
@@ -445,6 +472,10 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    ROS_INFO("Robot Config Group Name: %s",robot_config.group_name);
+
+
+
     // Everyone needs to know the name of the planning frame for reasons...
     // ...frame_id for the occupancy grid (for visualization)
     // ...frame_id for collision objects (must be the same as the grid, other than that, useless)
@@ -498,6 +529,25 @@ int main(int argc, char* argv[])
         ROS_ERROR("Failed to load Collision Model Config");
         return 1;
     }
+
+    ROS_INFO("Successfully loaded Collision Model Config");
+
+    ROS_INFO("Spheres Models:");
+    for (const auto& spheres_model : cc_conf.spheres_models) {
+        ROS_INFO_STREAM("  " << spheres_model);
+    }
+
+    ROS_INFO("Voxel Models:");
+    for (const auto& voxel_model : cc_conf.voxel_models) {
+        ROS_INFO_STREAM("  " << voxel_model);
+    }
+
+    ROS_INFO("Groups:");
+    for (const auto& group : cc_conf.groups) {
+        ROS_INFO_STREAM("  " << group);
+    }
+
+    ROS_INFO("Group name: %s",robot_config.group_name);
 
     smpl::collision::CollisionSpace cc;
     if (!cc.init(
@@ -572,6 +622,45 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+//     cc.m_abcs->updateSphereStates();
+
+    std::vector<shapes::ShapeConstPtr> shapes;
+    smpl::collision::Affine3dVector transforms;
+
+//    auto ao_shape = boost::make_shared<const shapes::Cylinder>(0.10, 0.20);
+    shapes::ShapeConstPtr ao_shape(new shapes::Cylinder(0.05, 0.10));
+    shapes.push_back(std::move(ao_shape));
+
+    Eigen::Quaternionf q;
+    q = Eigen::AngleAxisf(0, Eigen::Vector3f::UnitZ())
+        * Eigen::AngleAxisf(0, Eigen::Vector3f::UnitY())
+        * Eigen::AngleAxisf(0, Eigen::Vector3f::UnitX());
+
+    geometry_msgs::Pose pose;
+    pose.orientation.x = q.x();
+    pose.orientation.y = q.y();
+    pose.orientation.z = q.z();
+    pose.orientation.w = q.w();
+
+    pose.position.x = 0.3;
+    pose.position.y = 0.0;
+    pose.position.z = 0.1;
+
+    // std::cout<<"Object "<<i<<" orientation is"<<pose.position.x<<" "<<pose.position.y<<" "<<pose.position.z<<std::endl;
+
+    Eigen::Affine3d transform;
+    tf::poseMsgToEigen(pose, transform);
+
+    transforms.push_back(transform);
+
+    const std::string attach_link = "r_wrist_roll_link";
+    const std::string attached_body_id = "box";
+
+    if (!cc.m_abcm->attachBody(attached_body_id, shapes, transforms, attach_link)) {
+        ROS_ERROR("Failed to attach body to '%s'", attach_link.c_str());
+        return 1;
+    }
+
     cc.setWorldToModelTransform(Eigen::Affine3d::Identity());
 
     SV_SHOW_INFO(grid.getDistanceFieldVisualization(0.2));
@@ -579,6 +668,40 @@ int main(int argc, char* argv[])
     SV_SHOW_INFO(cc.getCollisionRobotVisualization());
     SV_SHOW_INFO(cc.getCollisionWorldVisualization());
     SV_SHOW_INFO(cc.getOccupiedVoxelsVisualization());
+
+    ROS_INFO("Attached Body Count %zu", cc.m_abcs->model()->attachedBodyCount());
+    ROS_INFO("Has Attached Body(%s): %s", attached_body_id.c_str(), cc.m_abcm->hasAttachedBody(attached_body_id) ? "true" : "false");
+    const int abidx = cc.m_abcm->attachedBodyIndex(attached_body_id);
+    ROS_INFO("Attached Body Index: %d", abidx);
+    ROS_INFO("Attached Body Name(%d): %s", abidx, cc.m_abcm->attachedBodyName(abidx).c_str());
+    ROS_INFO("Attached Body Indices: %s", to_string(cc.m_abcm->attachedBodyIndices(attach_link)).c_str());
+
+
+    cc.m_abcs->updateSphereStates();
+
+    // ros::Publisher vis_pub = nh.advertise<visualization_msgs::MarkerArray>(
+    //         "visualization_markers", 100);
+    // auto lol = cc.m_abcs->getVisualization();
+    // ROS_INFO("\n\nhellp pl0x: %d\n\n", lol.size());
+
+    auto ma = cc.m_abcs->getVisualization(1);
+    // ROS_INFO("Markers size: %d",ma.markers.size());
+    for (auto& marker : ma.markers) {
+        marker.header.frame_id = grid.getReferenceFrame();
+    }
+
+    SV_SHOW_INFO(ma);
+
+    // vis_pub.publish(ma);
+
+    // // let the publisher do its job
+    // ros::spinOnce();
+    // ros::Duration(1.0).sleep();
+
+    // while(true)
+    // {
+    //     // before;
+    // }
 
     ///////////////////
     // Planner Setup //
@@ -677,7 +800,26 @@ int main(int argc, char* argv[])
         for (auto& m : markers.markers) {
             m.ns = "path_animation";
         }
-        SV_SHOW_INFO(markers);
+
+        cc.m_abcs->updateSphereStates();
+        auto ma = cc.m_abcs->getVisualization(1);
+        for (auto& m : ma.markers) {
+            m.header.frame_id = grid.getReferenceFrame();
+            m.ns = "path_animation";
+        }
+
+        visualization_msgs::MarkerArray marker_array;
+        for (auto& m : ma.markers)
+            marker_array.markers.push_back(m);
+        for (auto& m : markers.markers)
+            marker_array.markers.push_back(m);
+
+        // ROS_INFO("Markers length: %d",markers.markers.size());
+        // ROS_INFO("Add more: %d",ma.markers.size());
+        // markers.markers.insert( markers.markers.end(), ma.markers.begin(), ma.markers.end() );
+        // ROS_INFO("Markers length: %d",markers.markers.size());
+
+        SV_SHOW_INFO(marker_array);
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         pidx++;
         pidx %= res.trajectory.joint_trajectory.points.size();

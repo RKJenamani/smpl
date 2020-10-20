@@ -8,6 +8,8 @@ initial_configuration:
     - { name: r_forearm_roll_joint,   position: 0.0 }
     - { name: r_wrist_flex_joint,     position: -1.05 } #-0.2 }
     - { name: r_wrist_roll_joint,     position: 0.0 }
+    - { name: r_gripper_r_finger_joint,     position: 0.25 }
+    - { name: r_gripper_l_finger_joint,     position: 0.25 }
 
 #  multi_dof_joint_state:
 #    - frame_id: map
